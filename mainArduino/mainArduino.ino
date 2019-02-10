@@ -1,4 +1,4 @@
-#define FIRMWARE_VER "ed435aa"
+#define FIRMWARE_VER "dev_branch"
 
 #include <SPI.h>
 #include <Ethernet.h>
@@ -17,14 +17,14 @@
 //#define DEBUG
 
 // when NO_LED is defined, the led is disabled so that it doesn't interfere with SPI SCK on boards like UNO
-#define NO_LED
+//#define NO_LED
 
 // uncomment and modify STATIC_IP to disable DHCP client mode
 //#define STATIC_IP { 10, 42, 0, 54 }
 
 // ====== end user editable config ======
 
-// help
+// help for commands
 const char help_0a[] PROGMEM = "v";
 const char help_0b[] PROGMEM = "diplay firmware revision";
 
