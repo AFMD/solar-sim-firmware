@@ -19,7 +19,7 @@
 // socat -,rawer,echo,escape=0x03 TCP:10.42.0.54:23
 
 // help
-String const commands[][2] = {
+String static const commands[][2] = {
   {"v", "diplay firmware revision"} ,
   {"adc", "\"adcX\" returns count of channel X (can be [0,7]), just \"adc\" returns counts of all channels"} ,
   {"s", "\"sXY\", selects pixel Y on substrate X, just \"s\" disconnects all pixels"} ,
@@ -33,7 +33,7 @@ String const commands[][2] = {
 
 int nCommands = sizeof(commands)/sizeof(commands[0]);
 
-#define ERR_MSG client.print("ERROR: Got bad command '"); client.print(cmd); client.println("'");
+#define ERR_MSG connection.print(F("ERROR: Got bad command '")); connection.print(cmd); connection.println(F("'"));
 
 //ADS122C04 definitions
 #define CURRENT_ADS122C04_ADDRESS 0x41
@@ -172,6 +172,7 @@ volatile uint8_t mcp_dev_addr, mcp_reg_addr, mcp_reg_value;
 volatile int pixSetErr = ERR_GENERIC;
 volatile int32_t adcCounts;
 
+EthernetClient connection;
 
 String cmd = "";
 void loop() {
@@ -184,43 +185,51 @@ void loop() {
   delay(aliveCycleT);
 
   // wait for a new client:
-  EthernetClient client = server.available();
+  EthernetClient client = server.accept();
+  
+  if (client) {
+    if (connection.connected()){
+      connection.print(F("Bumped by new connection"));
+      connection.stop(); // kick out the old connection
+    }
+    connection = client;
+  }
 
   // if we get bytes from someone
-  if (client) {
-    client.setTimeout(10000); //10s timeout
-    cmd = client.readStringUntil(0xd);
+  if (connection && connection.available() > 0) {
+    connection.setTimeout(10000); //give the client 10 seconds to send the 0xd to end the command
+    cmd = connection.readStringUntil(0xd);
     cmd.toLowerCase(); //case insensative
-    client.println("");
+    connection.println(F(""));
     
     if (cmd.equals("")){ //ignore empty command
       ;
     } else if (cmd.equals("v")){ //version request command
-      client.print("Firmware Version: ");
-      client.println(FIRMWARE_VER);
+      connection.print(F("Firmware Version: "));
+      connection.println(FIRMWARE_VER);
     } else if (cmd.equals("a")){ //analog voltage supply span command
-      client.print("Analog voltage span as read by U2 (current adc): ");
-      client.print(ads_check_supply(true),6);
-      client.println("V");
-      client.print("Analog voltage span as read by U5 (voltage adc): ");
-      client.print(ads_check_supply(false),6);
-      client.println("V");
+      connection.print(F("Analog voltage span as read by U2 (current adc): "));
+      connection.print(ads_check_supply(true),6);
+      connection.println(F("V"));
+      connection.print(F("Analog voltage span as read by U5 (voltage adc): "));
+      connection.print(ads_check_supply(false),6);
+      connection.println(F("V"));
     } else if (cmd.equals("s")){ //pixel deselect command
       mcp23x17_all_off();
     } else if (cmd.startsWith("s") & (cmd.length() == 3)){ //pixel select command
       pixSetErr = set_pix(cmd.substring(1));
       if (pixSetErr !=0){
-        client.print("ERROR: Pixel selection error code ");
-        client.println(pixSetErr);
+        connection.print(F("ERROR: Pixel selection error code "));
+        connection.println(pixSetErr);
       }
     } else if (cmd.startsWith("p") & (cmd.length() == 2)){ //photodiode measure command
       uint8_t pd = cmd.charAt(1) - '0';
       if (pd == 1 | pd == 2){
-          client.print("Photodiode D");
-          client.print(pd);
-          client.print(" = ");
-          client.print(ads_get_single_ended(true,pd+1));
-          client.println(" counts");
+          connection.print(F("Photodiode D"));
+          connection.print(pd);
+          connection.print(F(" = "));
+          connection.print(ads_get_single_ended(true,pd+1));
+          connection.println(F(" counts"));
       } else {
         ERR_MSG
       }
@@ -229,9 +238,9 @@ void loop() {
       if ((substrate >= 0) & (substrate <= 7)){
         bool result = mcp23x17_MUXCheck(substrate);
         if (result){
-          client.println("MUX OK");
+          connection.println(F("MUX OK"));
         } else {
-          client.println("MUX not found");
+          connection.println(F("MUX not found"));
         }
       } else {
         ERR_MSG
@@ -250,13 +259,13 @@ void loop() {
         mcp_reg_value &= ~ (1 << 2); // flip off V_D_EN bit
         mcp23x17_write(mcp_dev_addr, MCP_OLATA_ADDR, mcp_reg_value);
         
-        client.print("Board ");
+        connection.print(F("Board "));
         cmd.toUpperCase();
-        client.print(cmd.charAt(1));
+        connection.print(cmd.charAt(1));
         cmd.toLowerCase();
-        client.print(" sense resistor = ");
-        client.print(adcCounts);
-        client.println(" counts");
+        connection.print(F(" sense resistor = "));
+        connection.print(adcCounts);
+        connection.println(F(" counts"));
       } else {
         ERR_MSG
       }
@@ -264,38 +273,38 @@ void loop() {
       if (cmd.length() == 3){ //list all of the channels' counts
         for(int i=0; i<=7; i++){
           if ((i >= 0) & (i <= 3)){
-            client.print("AIN");
-            client.print(i);
-            client.print(" (U2, current adc, channel ");
-            client.print(i);
-            client.print(") = ");
-            client.print(ads_get_single_ended(true,i));
-            client.println(" counts");
+            connection.print(F("AIN"));
+            connection.print(i);
+            connection.print(F(" (U2, current adc, channel "));
+            connection.print(i);
+            connection.print(F(") = "));
+            connection.print(ads_get_single_ended(true,i));
+            connection.println(F(" counts"));
           }
           if ((i >= 4) & (i <= 7)){
-            client.print("AIN");
-            client.print(i);
-            client.print(" (U5, voltage adc, channel ");
-            client.print(i-4);
-            client.print(") = ");
-            client.print(ads_get_single_ended(false,i-4));
-            client.println(" counts");
+            connection.print(F("AIN"));
+            connection.print(i);
+            connection.print(F(" (U5, voltage adc, channel "));
+            connection.print(i-4);
+            connection.print(F(") = "));
+            connection.print(ads_get_single_ended(false,i-4));
+            connection.println(F(" counts"));
           }
         }
       } else if (cmd.length() == 4){
         int chan = cmd.charAt(3) - '0'; // 0-3 are mapped to U2's (current adc) chans AIN0-3, 4-7 are mapped to U5's (voltage adc) chans AIN0-3
         if ((chan >= 0) & (chan <= 3)){  
-          client.print("AIN");
-          client.print(chan);
-          client.print("= ");
-          client.print(ads_get_single_ended(true,chan));
-          client.println(" counts");
+          connection.print(F("AIN"));
+          connection.print(chan);
+          connection.print(F("= "));
+          connection.print(ads_get_single_ended(true,chan));
+          connection.println(F(" counts"));
         } else if ((chan >= 4) & (chan <= 7)) {
-          client.print("AIN");
-          client.print(chan);
-          client.print("= ");
-          client.print(ads_get_single_ended(false,chan-4));
-          client.println(" counts");
+          connection.print(F("AIN"));
+          connection.print(chan);
+          connection.print(F("= "));
+          connection.print(ads_get_single_ended(false,chan-4));
+          connection.println(F(" counts"));
         } else {
           ERR_MSG
         }
@@ -303,20 +312,24 @@ void loop() {
         ERR_MSG
       }
     } else if (cmd.equals("?") | cmd.equals("help")){ //help request command
-      client.println("__Supported Commands__");
+      connection.println(F("__Supported Commands__"));
       for(int i=0; i<nCommands;i++){
-        client.print(commands[i][0]);
-        client.print(": ");
-        client.println(commands[i][1]);
+        connection.print(commands[i][0]);
+        connection.print(": ");
+        connection.println(commands[i][1]);
       }
     } else if (cmd.equals("exit") | cmd.equals("close") | cmd.equals("disconnect") | cmd.equals("quit") | cmd.equals("logout")){ //logout
-      client.println("Goodbye");
-      client.stop();
+      connection.println(F("Goodbye"));
+      connection.stop();
     } else { //bad command
       ERR_MSG
     }
     
-    client.print(">>> "); //send prompt
+    connection.print(F(">>> ")); //send prompt
+  }
+  
+  if (connection && !connection.connected()){
+    connection.stop();
   }
 }
 
@@ -330,7 +343,7 @@ uint8_t mcp23x17_read(uint8_t dev_address, uint8_t reg_address){
   shiftOut(PE_MOSI_PIN, PE_SCK_PIN, MSBFIRST, reg_address);
   result = shiftIn(PE_MISO_PIN, PE_SCK_PIN, MSBFIRST);
   #else
-  //digitalWrite(ETHERNET_SPI_CS, LOW); //make super sure ehternet ic is not selected
+  digitalWrite(ETHERNET_SPI_CS, LOW); //make super sure ehternet ic is not selected
   SPI.beginTransaction(switch_spi_settings);
   SPI.transfer(crtl_byte); // read operation
   SPI.transfer(reg_address); // iodirA register address
@@ -350,7 +363,7 @@ void mcp23x17_write(uint8_t dev_address, uint8_t reg_address, uint8_t value){
   shiftOut(PE_MOSI_PIN, PE_SCK_PIN, MSBFIRST, reg_address);
   shiftOut(PE_MOSI_PIN, PE_SCK_PIN, MSBFIRST, value);
   #else
-  //digitalWrite(ETHERNET_SPI_CS, LOW); //make super sure ehternet ic is not selected
+  digitalWrite(ETHERNET_SPI_CS, LOW); //make super sure ehternet ic is not selected
   SPI.beginTransaction(switch_spi_settings);
   SPI.transfer(crtl_byte); // write operation
   SPI.transfer(reg_address); // iodirA register address
